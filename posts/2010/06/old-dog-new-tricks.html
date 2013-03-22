@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset='utf-8'>
+<link href='../../../exports.css' rel='stylesheet'>
+<link href='../../../exports.css' rel='stylesheet'>
+
+</head>
+<body>
+<div id='wrap'>
+<div id='header'>
+<h1>IT and ME</h1>
+<h2>This is an archived post
+This is an archived post
+</h2>
+</div>
+<div id='content'><div id='nav'>
+<a href="../../../posts/2010/06/managing-iptables-through-puppet.html">Previous</a>
+&nbsp; 
+<a href="../../../index.html">Index</a>
+&nbsp; 
+<a href="../../../posts/2010/06/using-puppet-to-manage-users-passwords-and-ss.html">Next</a>
+</div>
+<div class='post'>
+<div class='post_header'>
+<h3>Old Dog. New Tricks.</h3>
+<div class='post_info'>
+<span class='post_time'>June 16 2010,  2:46 PM</span>
+<span class='author'>&nbsp;by AJ Bourg</span>
+</div>
+</div>
+<div class='post_body'><h2>Old Dog. New Tricks.</h2>
+
+<p>When using new tools, it&rsquo;s important not to be boxed in by old habits. An illustration of that came to me today when I was working on our puppet install.</p>
+
+<p>I wanted puppet to manage some files. Typically not a big deal, puppet is a great tool for this job. But there was a complication in this setup in that the files were being rsynced from another machine, and I wanted a script to run anytime the files had been changed.</p>
+
+<p>To make things easy on myself, I wanted to have two directories for these files, ./config-available and ./config-enabled. This is a fairly standard setup, Debian does this for Apache, nginx, lighttpd, etc. All your sites are in the available directory, then to enable one you just put a symlink to the file in the enabled directory. So you have files that look like config-enabled/acme.com &ndash;> config-available/acme.com so you do not have two versions of files running all over the place.</p>
+
+<p>I wanted to replicate this functionality with puppet. And, owing to my old tricks, I had puppet make a symlink from the enabled directory pointing to the available directory, then had puppet run a script whenever it noticed that this link had changed. The problem is, depending on the configuration, either the script would run every time puppet ran (not when the file had changed), or it would never run. Puppet was confused and not doing what I wanted. Obviously my way is right and puppet is wrong, right?</p>
+
+<p>I went to lunch, and as often happens whenever I take a break, an epiphany struck. Why am I trying to symlink these files together? Well because I always symlink files to keep management overhead low. But why would you do that when puppet is managing all the files anyway? Hmmm, good question. Symlinks are nice because they prevent human users from becoming confused and editing the wrong copy of a file. But in our case, only puppet will ever touch these files. So the need to reduce confusion is very minimal.</p>
+
+<p>So I made one small change. Instead of telling puppet to create a symlink, I told it to source the file. This breaks conventional wisdom because instead of having one configuration file (config-available/acme.com) with links pointing to it, I will have two copies (config-available/acme.com and config-enabled/acme.com). But puppet won&rsquo;t get confused by this, and (unlike a human admin) will faithfully ensure the files are always identical.</p>
+
+<p>Yay for computers.</p>
+
+<p>I went from this config:</p>
+
+<div class="CodeRay">
+  <div class="code"><pre>file { <span class="global-variable">$script</span>:
+                    <span class="keyword">ensure</span>  =&gt; <span class="string"><span class="delimiter">&quot;</span><span class="content">config-available/${script}</span><span class="delimiter">&quot;</span></span>,
+                    notify  =&gt; exec[init-script],
+                    checksum=&gt; md5,
+                    links   =&gt; follow,
+                    notify  =&gt; exec[init-script]
+     }</pre></div>
+</div>
+
+
+<p>to this:</p>
+
+<div class="CodeRay">
+  <div class="code"><pre>file { <span class="global-variable">$script</span>:
+                    <span class="keyword">ensure</span>  =&gt; file,
+                    source  =&gt; <span class="string"><span class="delimiter">&quot;</span><span class="content">config-available/${script}.sh</span><span class="delimiter">&quot;</span></span>,
+                    notify  =&gt; exec[init-script]
+     }</pre></div>
+</div>
+
+
+<p>What you have learned and know is valuable and is often a useful tool when evaluating technical difficulties. But when changing tools sometimes we need to rethink how we do certain things. You may be an old dog, but be open to learning new tricks.</p></div>
+<div class='post_responses'>
+<h4>7067 views and 0 responses</h4>
+<ul class='post_responses list'>
+</ul>
+</div>
+</div>
+</div>
+</div>
+</body>
+</html>

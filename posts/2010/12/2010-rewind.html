@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset='utf-8'>
+<link href='../../../exports.css' rel='stylesheet'>
+<link href='../../../exports.css' rel='stylesheet'>
+
+</head>
+<body>
+<div id='wrap'>
+<div id='header'>
+<h1>IT and ME</h1>
+<h2>This is an archived post
+This is an archived post
+</h2>
+</div>
+<div id='content'><div id='nav'>
+<a href="../../../posts/2011/01/quick-and-easy-mac-screen-sharing.html">Previous</a>
+&nbsp; 
+<a href="../../../index.html">Index</a>
+&nbsp; 
+<a href="../../../posts/2010/09/haproxy-nginx-php-architecture.html">Next</a>
+</div>
+<div class='post'>
+<div class='post_header'>
+<h3>2010 Rewind</h3>
+<div class='post_info'>
+<span class='post_time'>December 29 2010, 11:37 AM</span>
+<span class='author'>&nbsp;by AJ Bourg</span>
+</div>
+</div>
+<div class='post_body'>2010 was a busy year, and it was yet another great year, technologically.<p /><div>Here's some of my favorite tech that I adopted in 2010.</div><p /><div><b><a href="http://www.evernote.com">Evernote</a>.</b>&nbsp;I have tried at various times in years past to adopt Evernote, and it finally really took off this year. Partly because I am now back to multiple computers/devices, and the Mac and iPhone clients have gotten really good. I used to keep a private media wiki install for all my notes, but Evernote feels freer, and I am documenting more information now than I ever have. It's just so much more convenient. I wish I had used it to full advantage in college.</div><p /><div><b>iPad.</b>&nbsp;Easily one of the standout new technologies, probably of the decade. I was ho-hum about it during the announcement (it's just a bigger iPhone without the phone?)–but somehow changed my mind and got one on launch day (I never do that!) and it's practically replaced my computer for most web surfing and other casual uses. I think there are three things that make the iPad so compelling: battery life, form-factor and usability. I joined Netflix thanks to the free app, and was blown away when the battery lasted through 3 and a half full movies. I remember walking into the Apple store on day one and trying out the iPad and being stunned by just how fast (and usable) everything was. I'm honestly not sure how Apple could significantly improve the iPad. Better battery life, lighter weight, a few new features will all be nice, but I think Apple totally nailed it on the first time. Awesome!!</div><p /><div><a href="http://haproxy.1wt.eu/"><b>Haproxy</b></a>. I started&nbsp;<a href="http://itand.me/haproxy-nginx-php-architecture">using</a>&nbsp;haproxy recently to scale, and boy am I glad I did. This has been on my list for years (years!) and I'm sorry I waited so long. Haproxy works great as a front-end load balancer for http traffic, but I am most excited about using its tcp balancing capabilities. Thinking hard about how I might use haproxy in the future to handle database and other backend connections through haproxy. Game changing.</div><p /><div><a href="http://www.puppetlabs.com/"><b>Puppet</b></a>. I started using Linux automation in '08 with cfengine and PXE and was really pleased with the capabilities of using automation to build and scale large datacenters of servers. With a job change, I took the opportunity to try puppet with baby steps in '09, and in '10 I feel like I'm really starting to push the envelope with what puppet is capable of. '11 will be continuing to push our puppet infrastructure, cleaning up some of our definitions, and building out a more scalable and dynamic IT Infrastructure.</div><p /><div><b>Dynamic VMs</b>. I have been enchanted with VMs since about '05 when I first really started using VMware. (this is, incidentally, when I think VMs started to have really good performance, thanks to faster and better hardware) I love VM technology, and have given probably about 10 presentations on various aspects of the technology to many different groups, and VMs just keep getting better and better. At least for my own use of VMs, the time-line looks something like this: '05: coming of age; '06: replacing my main Windows install with a VM and running Mac/Linux native, '07 using it to full effect for testing, '08 main IT infrastructure tool, '09 replicating user environments, '10 dynamic VMs to manage demand. I love VM technology, and I'm quite encouraged that it continues to evolve and grow with industry needs. VM technology has proven to be more than a one trick pony and has turned into an essential IT building block.</div><p /><div><b>What needs work.</b>&nbsp;While I am incredibly pleased with the amount of new technology I really took full advantage of in '10 (and the above is just scratching the surface), I think some tech could be used much better in '11. Some of this is hard technology limitations, but a lot of it is just stuff that I need to take better control of. Here's my list of things to improve in 2011:</div><p /><div><b>Testing/Monitoring.</b>&nbsp;Testing is extremely hard work when you build entire systems. Programmers have it easy. Programs are naturally divided into small tasks, with well defined start points and stop points, and doing some unit tests are simple. Once you get out to a macro level, it's a lot harder to test and (more importantly) find exactly what part of the stack is failing. I think the solution is to flank this problem from two sides.</div><p /><div>The first side is what I will call "Big Picture" testing. It's making sure that users are getting the results they want and need in a timely manner. I did some of this in validating puppet and VM infrastructure. I pulled URLs out of our access logs (what people actually use and do, not what we think they do) and just hit new infrastructure to make sure it did the right thing, there are no failures and that it performed adequately. This is pre-Alpha stuff, there's a lot more work to be done, and top on my list is automating it so we can be alerted of when something breaks quickly. The nice thing about this is it's front-end testing, it doesn't care how the backend works, it just makes sure that it does.&nbsp;The bummer is that it doesn't really tell you <i>what</i>&nbsp;is causing your issue. So that is where testing part #2 comes in.</div><p /><div>The next part is a lot more microscopic. It's the stuff IT is more familiar with. Monitoring load, disk activity, processes, database statistics. Etc. The nice thing about this level of monitoring is that, if you know what is 'normal', you can detect when something has gone wrong and it is no longer acting normally but may not yet be user-visible. This level of monitoring/testing feels like it's a lot more proactive. But it takes a lot of discipline to make sure that everything you should be monitoring is monitored, and it takes a lot of experience to know what is problematic and not.</div><p /><div>I've done a lot with both, and I'm especially pleased with the direction I plan to go with Big Picture monitoring in '11, but none of this is anywhere I want it to be now, so I'm putting this in the "needs work" category.</div><p /><div><b>Security</b>. Security is always troublesome because an intruder only has to get it right once to break in, and you need to be right every single time to prevent it. I would really like to see better and more default configurations in most software, and better tools for tracking security issues of all types. (perhaps an opportunity for better monitoring)</div><p /><div><b>Downtime</b>.&nbsp;And I don't mean the server kind. I feel like I've neglected my own spiritual and physical health for the last several years because I've been so busy IT fire-fighting. I got caught up in it, partly because I have found that I have a lot of skill at quickly troubleshooting complicated situations, partly because I enjoy it, and partly because the adrenaline rush is addictive. But always being in fire-fighting mode, and never having a chance to shift down, disconnect from the IT world and reconnect with the Father has a steep cost. I feel like I've cruised into the end of '10 having won the battle but in the losing side of the war. So that is going to change in '11. I'm passionate about building people up and teaching them what I know, and I'm going to really focus on it again in '11 with kids, students, and other IT people. I'm also planning to take a lot more time off, alone and out of contact to be better about my spiritual life. I've already got January time off allocated, working on more time for the next few months. And for the last month and a half, I have been training to climb my first 14er (that's a 14,000 foot tall mountain, for you non-Coloradoans ;). I've already got a group of guys that have committed to go with me in summiting&nbsp;<a href="http://en.wikipedia.org/wiki/Longs_Peak">Long's Peak</a>, one of the most iconic mountains in all of Colorado. (it appears on the Colorado state quarter) My goal is to go in mid-July.</div><p /><div>I don't want to neglect any detail in 2011. I'm committed to do better spiritually and physically.</div><p /><div>So what are your tech highlights and lowlights from 2010? What are you going to be doing in 2011?</div></div>
+<div class='post_responses'>
+<h4>7285 views and 2 responses</h4>
+<ul class='post_responses list'>
+<li class='response clearfix'>
+<div class='response_header'>
+<div class='response_time'>Dec 29 2010, 11:52 AM</div>
+<div class='response_name'>Jeromy Lukenbaugh responded:</div>
+</div>
+<div class='response_body'>AJ, that was a really nice post, it's people like you that inspire others to grow and do more. Thank you!</div>
+</li>
+<li class='response clearfix'>
+<div class='response_header'>
+<div class='response_time'>Dec 29 2010, 12:18 PM</div>
+<div class='response_name'>AJ Bourg responded:</div>
+</div>
+<div class='response_body'>Thanks Luke. I'm glad you like it—but I posted it for selfish reasons. If I publish my goals, I'm a lot more likely to be called out when I'm not living up to them! :)</div>
+</li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+</body>
+</html>

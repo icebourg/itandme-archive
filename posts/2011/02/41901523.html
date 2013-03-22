@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset='utf-8'>
+<link href='../../../exports.css' rel='stylesheet'>
+<link href='../../../exports.css' rel='stylesheet'>
+
+</head>
+<body>
+<div id='wrap'>
+<div id='header'>
+<h1>IT and ME</h1>
+<h2>This is an archived post
+This is an archived post
+</h2>
+</div>
+<div id='content'><div id='nav'>
+<a href="../../../posts/2011/02/google-authenticator-for-easy-one-time-passwo.html">Previous</a>
+&nbsp; 
+<a href="../../../index.html">Index</a>
+&nbsp; 
+<a href="../../../posts/2011/01/augeas-makes-slicing-and-dicing-config-files.html">Next</a>
+</div>
+<div class='post'>
+<div class='post_header'>
+<h3>Pacemaker and HAProxy: Preventing Single Points of Failure</h3>
+<div class='post_info'>
+<span class='post_time'>February  4 2011,  8:00 AM</span>
+<span class='author'>&nbsp;by AJ Bourg</span>
+</div>
+</div>
+<div class='post_body'><p>In the past, I&rsquo;ve shared how <a href="http://itand.me/haproxy-nginx-php-architecture">we use HAProxy</a> to help increase uptime and distribute load among any number of web servers.</p>
+
+<p>HAProxy is an amazing tool, and I can&rsquo;t thank the author, <a href="http://1wt.eu/">Willy Tarreau</a>, enough for making it available and open source.</p>
+
+<p>Of course, while HAProxy has proven to be extremely stable in production and we&rsquo;ve never had an issue with it at all, it does present its own single point of failure. If your HAProxy server dies, everything that relies on HAProxy will go down with it. While I am not at all concerned about HAProxy itself crashing, I <strong>am</strong> concerned about a gamma ray hitting the CPU at just the wrong moment and nuking the whole thing.</p>
+
+<p>Let&rsquo;s take our infrastructure a level higher. Let&rsquo;s add some redundancy on the HAProxy level to ensure that even if we nuke the front line HAProxy box, nobody&rsquo;s the wiser.</p>
+
+<p>We&rsquo;re going to do that with a really cool tool called <a href="http://www.linux-ha.org/wiki/Pacemaker">Pacemaker</a>. My basic idea is that I&rsquo;m going to take an IP address, and a cluster of servers. Each server will run Pacemaker and be a part of a Pacemaker cluster. I tell pacemaker that I want my IP address and HAProxy to always be available, and Pacemaker will start and stop both IPs and HAProxy on all of the different nodes to ensure it is always available.</p>
+
+<p>It&rsquo;s actually pretty simple, but there&rsquo;s nothing cooler than pinging an HA (high availability) IP, kicking over the server it&rsquo;s sitting on and watching Pacemaker instantly move the services to a different server. In my testing, I only ever lost at most 1 packet as I was pinging an IP during switchover. That just makes me so happy inside.</p>
+
+<p>Enough theory, let&rsquo;s dive into how to make this wonder work.</p>
+
+<h2>Boring Setup Pre-Requisites</h2>
+
+<p>If you are on Debian (and have <a href="http://backports.debian.org/Instructions/">backports enabled</a>), you just need to install corosync and pacemaker to get it set up and going:</p>
+
+<div class="CodeRay">
+  <div class="code"><pre>apt-get install corosync pacemaker -t lenny-backports</pre></div>
+</div>
+
+
+<p>Run this on every node in your planned cluster.</p>
+
+<p>Corosync is, from my understanding, the layer that communicates with all the different nodes. It ensures that each node has a valid copy of the configuration, and it helps Pacemaker know the status of the cluster. There are other choices for this layer, but Corosync seems to be the most actively developed and mature choice currently available.</p>
+
+<p>Next, we need to make sure that we have some encryption keys for Corosync to communicate with all the nodes.</p>
+
+<div class="CodeRay">
+  <div class="code"><pre>corosync-keygen</pre></div>
+</div>
+
+
+<p>Only run this on one node. Copy this key (/etc/corosync/authkey) to all the other planned nodes, and ensure permissions are set correctly. (<em>chown root:root /etc/corosync/authkey; chmod 400 /etc/corosync/authkey</em>)</p>
+
+<p>Next, you&rsquo;ll want to configure the corosync config file. The example file (in /etc/corosync/corosync.conf.example) is perfect to start out, you&rsquo;ll probably only need to adjust the interface bindnetaddr value and multi-cast address. In many cases, especially if you are hosting with another provider, you can&rsquo;t use multicasting. Fortunately, corosync supports broadcast just fine.</p>
+
+<p>You&rsquo;ll need to do each of the following steps on each node. Here&rsquo;s what works for me:</p>
+
+<div class="CodeRay">
+  <div class="code"><pre>interface {
+           ringnumber: 0
+           bindnetaddr: 192.168.10.0
+           broadcast: yes
+           mcastport: 5405
+}</pre></div>
+</div>
+
+
+<p>Note that bindnetaddr needs to be your subnet ID for broadcast to work correctly. (for some reason, I couldn&rsquo;t find clear documentation on this point when I was setting up my cluster.)</p>
+
+<p>At the end, you&rsquo;ll also want to add this section so corosync starts pacemaker:</p>
+
+<div class="CodeRay">
+  <div class="code"><pre>service {
+        name: pacemaker
+        ver: 0
+}</pre></div>
+</div>
+
+
+<p>You&rsquo;ll also need a log directory, or you&rsquo;ll get a cryptic error like &ldquo;parse error in config&rdquo;</p>
+
+<div class="CodeRay">
+  <div class="code"><pre>mkdir /var/log/cluster/</pre></div>
+</div>
+
+
+<p>Go ahead and start corosync on each node.</p>
+
+<div class="CodeRay">
+  <div class="code"><pre>/etc/init.d/corosync start</pre></div>
+</div>
+
+
+<p>With any luck, you will have your first Pacemaker high availability cluster up and running! Hooray! You can verify the status of all your nodes by running crm_mon. If some of your nodes are not listed, you will want to go back and make sure everything is setup properly.</p>
+
+<h2>The Fun Stuff: Configuration</h2>
+
+<p>So now that we have our cluster up and running, we can play around with the configuration and tell it what we want to make highly available across all nodes. For that, we&rsquo;re going to use the crm command. If you have ever used Cisco IOS commands, you will feel at home with crm. A lot of their navigational structure really reminds me of IOS.</p>
+
+<p>So let&rsquo;s create a new config!</p>
+
+<p>Type &lsquo;configure&rsquo; to enter configuration mode. <em>verify</em> helps make sure the config is valid, <em>show</em> will show you the current configuration, <em>help</em> will show you other commands you can run. Let&rsquo;s make a new configuration, and get cracking.</p>
+
+<div class="CodeRay">
+  <div class="code"><pre>crm(live)configure# cib new config1</pre></div>
+</div>
+
+
+<p>Config1 is just a name. We&rsquo;re making a new configuration that we can work on that won&rsquo;t actually change anything in production until we commit it and switch live to config1. This allows us to tweak and make complex dependency changes without breaking anything in the cluster.</p>
+
+<p>Let&rsquo;s go ahead and configure an IP address we want to make highly available. This IP should not be already assigned or setup on any existing hosts. This IP needs to be routable to all the nodes in your cluster. If you are in a hosting environment, you will need to get an IP from your provider.</p>
+
+<p>So with our planned HA IP in mind, it&rsquo;s just a simple matter of giving it to Pacemaker:</p>
+
+<div class="CodeRay">
+  <div class="code"><pre>crm(config1)configure# primitive failover-ip ocf:heartbeat:IPaddr2 params ip=192.168.1.1 cidr_netmask=32 op monitor interval=1s</pre></div>
+</div>
+
+
+<p>Pretty straight forward, just give it the IP address, and tell it to monitor this IP once a second.</p>
+
+<p>Now we&rsquo;ll make sure the config looks good, verify it, and commit it to live:</p>
+
+<div class="CodeRay">
+  <div class="code"><pre>crm(config1)configure# show
+crm(config1)configure# verify
+crm(config1)configure# end
+crm(config1)# cib use live
+crm(live)# cib commit config1</pre></div>
+</div>
+
+
+<p>Congratulations! You&rsquo;ve just saved your configuration to all nodes in the cluster and made it live.</p>
+
+<p>If you issue <em>status</em>, you should see that your IP address has started, and it will tell you on which node it started.</p>
+
+<p>One thing you probably will want to do is increase the resource &ldquo;stickiness&rdquo;. By default, Pacemaker assumes the cost of switching a resource is 0. This just means that Pacemaker thinks there are no penalties for moving a resource around, and will do so any time a node goes down or becomes available. If you take down the node the IP was assigned, Pacemaker automatically moves it to the other node. If the original node comes up again, Pacemaker will go ahead and move the IP back to the node, even if nothing is wrong on the new node. Since we probably don&rsquo;t want services moving around unless totally necessary, we will set the resource stickiness so Pacemaker will only move a service when necessary:</p>
+
+<div class="CodeRay">
+  <div class="code"><pre>configure rsc_defaults resource-stickiness=100</pre></div>
+</div>
+
+
+<p>Next, we want to make HAProxy available with the IP address. If HAProxy fails on one node, we want Pacemaker to start it (with the right IP) on another node. Pacemaker will handle starting/stopping services/IP addresses on different nodes, but it&rsquo;s our responsibility to ensure each node has HAProxy installed and the correct configuration.</p>
+
+<p>We&rsquo;ll use the LSB (Linux Standard Base) class for HAProxy. The LSB class is for all the scripts in /etc/init.d. Note that most startup scripts, including the Debian startup script for HAProxy, <strong>are not LSB compatible.</strong> You will probably need to tweak the HAProxy startup script so it sends the right signals to Pacemaker so it will act properly. You can find out how to do that <a href="http://www.clusterlabs.org/doc/en-US/Pacemaker/1.0/html/Pacemaker_Explained/ap-lsb.html">here</a>.</p>
+
+<p>In configure mode, with a new configuration, just create a new LSB primitive:</p>
+
+<div class="CodeRay">
+  <div class="code"><pre>crm(config-2)configure# primitive haproxy lsb:haproxy op monitor interval=&quot;1s&quot;</pre></div>
+</div>
+
+
+<p>We will want to keep the failover IP and HAProxy together, it doesn&rsquo;t do us any good if HAProxy runs on one machine, but the IP address is on another. So we set colocation to infinity:</p>
+
+<div class="CodeRay">
+  <div class="code"><pre>crm(config-2)configure# colocation haproxy-with-public-IPs INFINITY: haproxy failover-ip</pre></div>
+</div>
+
+
+<p>And we want to make sure that HAProxy is started after the IP address, so that we can bind to the IP:</p>
+
+<div class="CodeRay">
+  <div class="code"><pre>crm(config-2)configure# order haproxy-after-IP mandatory: failover-ip haproxy</pre></div>
+</div>
+
+
+<p>Do be careful when you set INFINITY with your colocation. If both can&rsquo;t start, neither will start. I had an issue with my cluster where I had an error in my stunnel configuration on only one server, and I set stunnel and haproxy both to prefer each other with INFINITY preference, and when stunnel couldn&rsquo;t start, Pacemaker shut down HAProxy even though HAProxy was fine alone. I switched the preference to 200, so that Pacemaker would know I <em>prefer</em> HAProxy and stunnel to run together, but that I don&rsquo;t consider it a failure if both can&rsquo;t run for some reason.</p>
+
+<p>Now commit your changes to live and your HAProxy setup will automatically distribute itself across several servers for much better uptime, and no single point of failure! Hooray!</p>
+
+<h2>Testing</h2>
+
+<p>You should always test your clustering setup and make sure it&rsquo;s acting the way you expect it to. Rip out the power or ethernet cable, shutdown corosync service, mess up your HAProxy config and reboot. Test several different failures and make sure that Pacemaker responds the way you expect it to. Make sure that each node can start up all the necessary services. Make sure that your config isn&rsquo;t doing anything dumb that will actually worsen your reliability rather than improve it.</p>
+
+<p>Then sleep like a baby at night because you have just removed a significant single point of failure! :)</p>
+
+<h2>Further Reading</h2>
+
+<ul>
+<li><a href="http://www.clusterlabs.org/doc/en-US/Pacemaker/1.1/html/Clusters_from_Scratch/index.html">Clusters from Scratch</a> (super useful guide!)</li>
+<li><a href="http://www.clusterlabs.org/wiki/Debian_Lenny_HowTo">Debian Lenny How-To</a></li>
+<li><a href="http://www.slideshare.net/tserong/high-availability-in-37-easy-steps">High Availability in 37 Easy Steps</a></li>
+<li><a href="http://www.clusterlabs.org/doc/en-US/Pacemaker/1.0/html/Pacemaker_Explained/index.html">Pacemaker Explained</a></li>
+<li><a href="http://www.clusterlabs.org/doc/en-US/Pacemaker/1.0/html/Pacemaker_Explained/ap-lsb.html">Is This init Script LSB Compatible?</a></li>
+<li><a href="http://www.howtoforge.com/how-to-set-up-an-active-passive-postgresql-cluster-with-pacemaker-corosync-and-drbd-centos-5.5">How To Set Up An Active/Passive PostgreSQL Cluster With Pacemaker, Corosync, And DRBD (CentOS 5.5)</a></li>
+</ul></div>
+<div class='post_responses'>
+<h4>16456 views and 6 responses</h4>
+<ul class='post_responses list'>
+<li class='response clearfix'>
+<div class='response_header'>
+<div class='response_time'>Jul 17 2011, 10:41 AM</div>
+<div class='response_name'>ellisgl (Twitter) responded:</div>
+</div>
+<div class='response_body'>scp /etc/corosync/authkey <a href="mailto:root@10.10.10.2" rel="nofollow">root@10.10.10.2</a>:/etc/corosync/authkey</div>
+</li>
+<li class='response clearfix'>
+<div class='response_header'>
+<div class='response_time'>Jul 17 2011, 12:51 PM</div>
+<div class='response_name'>ellisgl (Twitter) responded:</div>
+</div>
+<div class='response_body'>Noticed that the haproxy.cfg isn't sync'd...</div>
+</li>
+<li class='response clearfix'>
+<div class='response_header'>
+<div class='response_time'>Jul 17 2011,  3:05 PM</div>
+<div class='response_name'>ellisgl (Twitter) responded:</div>
+</div>
+<div class='response_body'>I have an issue on my fail over node where HAProxy will not start. Any ideas?<br />Saying it can't bind to the socket (mysql is what i'm load balancing)</div>
+</li>
+<li class='response clearfix'>
+<div class='response_header'>
+<div class='response_time'>Jul 17 2011,  5:11 PM</div>
+<div class='response_name'>AJ Bourg responded:</div>
+</div>
+<div class='response_body'>Hey ellisql,<p>I left out the syncing of the HAProxy config, but it's pretty straightforward. Just have a script that rsyncs the config between the servers.</p><p>As for HAProxy not starting, if you are binding to a specific IP address, corosync needs to have migrated that IP before you can bind that particular IP. You have a couple of options here:</p><p>1) Make sure Corosync manages both the IP address and HAProxy and set up ordering so Corosync will only start HAProxy after the IP address has been started on a particular server. This is the config in the blog post.</p><p>2) Don't bind HAProxy to any particular IP address. Instead, bind it to *:[port], and when you start HAProxy, it will simply listen to all IPs. Once the IP has migrated, HAProxy will start listening on the new IP. I use this method personally.</p><p>3) Use transparent bindings. This may not be supported on your kernel or build of HAProxy. But the basic idea is to add the keyword transparent to your binding statement. HAProxy will still listen for this IP address, but will start even if it's not available when HAProxy starts.</p><p>I prefer option #2 personally as it's the most versatile and allows me to run HAProxy on each node continuously. If you go this route, you may want to look at the Pacemaker config for cloned resources, which allow you to run the same HAProxy resource on multiple nodes simultaneously.</p></div>
+</li>
+<li class='response clearfix'>
+<div class='response_header'>
+<div class='response_time'>Jul 13 2012,  8:51 AM</div>
+<div class='response_name'>Jodi responded:</div>
+</div>
+<div class='response_body'>Thank you for your valuable write-up AJ<p>I'd like to load balance - In this case each HAproxy could direct to a pool of ips on itself on each other *available server</p><p>Could pacemaker help such that haproxy doesn't route in the event of a server being unavailable ?</p><p>cheers - Jodi</p></div>
+</li>
+<li class='response clearfix'>
+<div class='response_header'>
+<div class='response_time'>Jul 13 2012,  9:06 AM</div>
+<div class='response_name'>Jodi responded:</div>
+</div>
+<div class='response_body'>..after commenting, thinking it through, perhaps answering myself..<p>I guess pacemaker could start/stop some local lan ips that either on it's local box or to another box on the lan - and haproxy would be an identical config on each box</p><p>something like that ?</p></div>
+</li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+</body>
+</html>

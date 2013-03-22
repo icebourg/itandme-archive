@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset='utf-8'>
+<link href='../../../exports.css' rel='stylesheet'>
+<link href='../../../exports.css' rel='stylesheet'>
+
+</head>
+<body>
+<div id='wrap'>
+<div id='header'>
+<h1>IT and ME</h1>
+<h2>This is an archived post
+This is an archived post
+</h2>
+</div>
+<div id='content'><div id='nav'>
+<a href="../../../posts/2011/07/how-to-communicate.html">Previous</a>
+&nbsp; 
+<a href="../../../index.html">Index</a>
+&nbsp; 
+<a href="../../../posts/2011/05/the-geekdesk-review.html">Next</a>
+</div>
+<div class='post'>
+<div class='post_header'>
+<h3>Zero-Downtime Upgrades of PostgreSQL with pgbouncer and Londiste</h3>
+<div class='post_info'>
+<span class='post_time'>July  6 2011,  2:46 PM</span>
+<span class='author'>&nbsp;by AJ Bourg</span>
+</div>
+</div>
+<div class='post_body'><p>How do you migrate a large and live running Postgresql instance to 9.0? That's one thing I was just recently tasked with doing, and there are several ways to go about this. Probably the most straightforward of ways is to upgrade from your distribution's Postgres package and using the built in upgrade utility to do a single server upgrade. It's relatively quick and easy, and I strongly suggest going down this route if you have the chance.</p>
+<p>However, I chose to handle our upgrade a little differently. Some of the complicating factors include:</p>
+<ol>
+<li>I wanted no downtime at all for this upgrade. In practice, we ended up having some and even in the absolute best cases, you will probably have to go dark for at least 30 seconds.</li>
+<li>I wanted a super reliable and drop dead fall back procedure I could absolutely count on.</li>
+<li>I was low on disk space for the database, and the old database was on a legacy CentOS box I wanted to transition to Debian with larger drives. Rather than schedule 3 separate upgrades for each case, it made a lot more sense to me to consolidate all these updates into one step.</li>
+<li>It was also a good test of our planned DR plan. I have tested it in staging, but never before in production and I wanted to make sure that the plan would work as expected in production.</li>
+</ol>
+<p>Our architecture looks something like this:<div class='p_embed p_image_embed'>
+<img src='../../../image/2011/06/28202062-Untitled.png'>
+</div>
+</p>
+<p>Each app server connects to a pgbouncer server which pools those connections and only makes a handful of connections back to the database server. Because connections within Postgres can be rather expensive, using a pooler like pgbouncer really helps us when we may have thousands of PHP processes, each needing data from the database server. PGBouncer is also great because it can do automatic failover if you have multiple database servers and can move connections to a new, healthy master tranparently to each PHP process.</p>
+<p>This feature comes in really handy when you want to do a Postgres update. We had two database servers, psqlA and psqlB. psqlA is the master and runs the legacy CentOS installation with the older Postgres version. psqlB is the redundant backup server. I decided to do all the upgrades on psqlB -- it got larger harddrives, and was updated to Postgres 9. Then, using Londiste's statement based replication, I began replicating data from psqlA's 8.3 install to psqlB's 9.0 install. It looks something like this:</p>
+<p><div class='p_embed p_image_embed'>
+<img src='../../../image/2011/06/28202306-Untitled-1.png'>
+</div>
+Hopefully you can see where this is headed. :) So now with the replication happening between psqlA and psqlB, we can cutover at any time within PGBouncer to psqlB and ... boom ... upgrade completed! Yay!</p>
+<p><div class='p_embed p_image_embed'>
+<img src='../../../image/2011/06/28202381-Untitled-2.png'>
+</div>
+</p>
+<p>In theory, there is no difference between theory and practice. But in practice there is. And the same was true here. :) It wasn't quite as clean as imagined.</p>
+<p>There were a few things that probably could have gone better. First of all, I wanted to be in full control of where database queries went, so I wasn't using pgbouncer's built in failover options. Instead, I had two config files, psqlA and psqlB, so I could move traffic back and forth as necessary. This proved to not be perfectly smooth. I was probably doing something wrong, but I ended up restarting pgbouncer to break old connections to move traffic to the new server. In the end, not a big deal, but it added a few seconds of a hard stop while the PHPs reconnected to the new pgbouncer.</p>
+<p>The second reason I ended up putting a hardstop was because of replication. Because replication will always lag a few seconds, I ended up stopping traffic for a few seconds to let any lingering data replicate from psqlA to psqlB. Then when that happened, I stepped in and broke replication completely so that there would be no funny business if something went wrong and some traffic ended up on psqlA by accident. I shutdown psqlA's Postgres instance, brought up PGBouncer, and watched traffic start to flow to psqlB. Total downtime amounted to about 20-30 seconds on the database side, but it caused a slight backup on the app servers that lasted for about 45-120 seconds.</p>
+<p>Unfortunately, it more than one upgrade attempt to get that result. Each upgrade went smoothly, and things were looking very good for the first few minutes, but within about 2-5 minutes of switching to psqlB, we found we were quickly running out of connections within Postgres.</p>
+<p>Turns out, despite months of testing Postgres 9 in dev and staging, we missed that a few queries were taking much longer to execute. It was hardly noticeable to use because the query went from like .09 to .15 seconds or something like that, just enough that our testing didn't notice a difference. But when put in production, with hundreds of requests per second, caused just enough of a backup to be an issue. We ended up failing back to psqlA, investigated the issue, fixed it, and the <em>next</em> upgrade went much smoother. Turns out, that one of the optimization changes in PG9.0 actually makes the optimizer worse for a particular query we used a lot. Fortunately, it was an <em>extremely</em>&nbsp;simple fix that made the optimizer perform better.</p>
+<p>Overall, it was a pretty smooth experience, and except for the minor hiccup in having to failback, the whole process was barely noticeable. I'm quite thankful for the time I took to plan out the whole upgrade process, especially having a reliable and trusted fallback position. But in the future, I know we will be paying even closer attention to even the slightest of performance deltas.</p></div>
+<div class='post_responses'>
+<h4>2941 views and 5 responses</h4>
+<ul class='post_responses list'>
+<li class='response clearfix'>
+<div class='response_header'>
+<div class='response_time'>Jul 14 2011, 10:56 AM</div>
+<div class='response_name'>KP responded:</div>
+</div>
+<div class='response_body'>First of all I just want to say thanks for the post. I will be doing something very similar here soon. Just wondering but what version of Londiste did you use?</div>
+</li>
+<li class='response clearfix'>
+<div class='response_header'>
+<div class='response_time'>Jul 14 2011, 10:59 AM</div>
+<div class='response_name'>AJ Bourg responded:</div>
+</div>
+<div class='response_body'>Hi KP,<p>We used the latest version, 2.1.12. It is the only version that supports PG9, the previous versions will not replicate to a PG9 slave. (you get all kinds of weird error messages ... I didn't realize there was an updated Londiste when I started this project :)</p></div>
+</li>
+<li class='response clearfix'>
+<div class='response_header'>
+<div class='response_time'>Jul 15 2011,  4:14 PM</div>
+<div class='response_name'>KP responded:</div>
+</div>
+<div class='response_body'>AJ, <br />Did you have any issues adding sequences? Londiste is crashing whenever I try the "provider add-seq –all".</div>
+</li>
+<li class='response clearfix'>
+<div class='response_header'>
+<div class='response_time'>Jul 15 2011,  4:21 PM</div>
+<div class='response_name'>AJ Bourg responded:</div>
+</div>
+<div class='response_body'>I don't remember having any issues with sequences. Can you add tables ok? What happens if you add each sequence by name ... it's possible there is one problematic sequence and all the others will add ok.<p>Failing all of that, post whatever backtrace message you get and maybe we can figure it out.</p></div>
+</li>
+<li class='response clearfix'>
+<div class='response_header'>
+<div class='response_time'>Jul 15 2011,  4:21 PM</div>
+<div class='response_name'>AJ Bourg responded:</div>
+</div>
+<div class='response_body'>I don't remember having any issues with sequences. Can you add tables ok? What happens if you add each sequence by name ... it's possible there is one problematic sequence and all the others will add ok.<p>Failing all of that, post whatever backtrace message you get and maybe we can figure it out.</p></div>
+</li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+</body>
+</html>

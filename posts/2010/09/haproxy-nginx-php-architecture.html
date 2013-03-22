@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset='utf-8'>
+<link href='../../../exports.css' rel='stylesheet'>
+<link href='../../../exports.css' rel='stylesheet'>
+
+</head>
+<body>
+<div id='wrap'>
+<div id='header'>
+<h1>IT and ME</h1>
+<h2>This is an archived post
+This is an archived post
+</h2>
+</div>
+<div id='content'><div id='nav'>
+<a href="../../../posts/2010/12/2010-rewind.html">Previous</a>
+&nbsp; 
+<a href="../../../index.html">Index</a>
+&nbsp; 
+<a href="../../../posts/2010/09/debian-backportsorg-now-official.html">Next</a>
+</div>
+<div class='post'>
+<div class='post_header'>
+<h3>HAProxy + nginx + php architecture</h3>
+<div class='post_info'>
+<span class='post_time'>September 23 2010,  1:10 PM</span>
+<span class='author'>&nbsp;by AJ Bourg</span>
+</div>
+</div>
+<div class='post_body'><h2>HAProxy + nginx + php architecture</h2>
+
+<p>We have a certain <a href="http://www.youversion.com/">website</a> that has been <a href="http://blog.youversion.com/youversions-amazing-growth-challenges/">growing like crazy</a>, and we wanted to make several architecture adjustments and enhancements. The first part of our architecture plan was to introduce <a href="http://haproxy.1wt.eu/">HAProxy</a> as a front-end load balancer to broker connections, and give us better control over our load.</p>
+
+<h2>General Architecture</h2>
+
+<p>A request comes in from the internet, hits HAProxy, and gets routed to one of several nginx servers. nginx, through the use of the eval module and some trickery, first checks back with memcached to see if the requested page is in cache. If it is, nginx serves the page directly, and nothing hits PHP or the database.</p>
+
+<p>If it is not in cache, nginx forwards it to the local php5-fpm server which processes the raw php and generates a page. It also puts this page into memcache so the page does not have to be regenerated. It&rsquo;s a great setup, and we really love what it enables us to do.</p>
+
+<h2>HAProxy</h2>
+
+<p>Traffic comes in to HAProxy in one of two ways, directly on port 80 from the public, or indirectly through a different port from stunnel. (this latter type of traffic was https traffic that was decrypted before hitting HAProxy) More on that in a bit.</p>
+
+<p>We want to maintain as much backwards compatibility with past browsers and devices as we possibly can. Through testing in the past, we&rsquo;ve discovered that some very dumb phones and devices do not send the Host HTTP header. This disables virtual hosting, and means that if we want these devices to be able to access our site, each site has to have its own IP address. A real bummer.</p>
+
+<p>But, fortunately, it&rsquo;s very easy to add/modify headers in HAProxy. And very quick. All we have to do is define a couple ACLs to determine which IP address this request came in on, and then add a host header if it doesn&rsquo;t exist. For example:</p>
+
+<div class="CodeRay">
+  <div class="code"><pre>frontend http-in
+    bind *:80
+
+    acl is_api dst  1.2.3.5
+    acl is_m dst    1.2.3.6
+    acl has_host hdr_end(host) -i example.com
+
+    reqadd Host:\ api.example.com        if is_api !has_host
+    reqadd Host:\ m.example.com          if is_m !has_host</pre></div>
+</div>
+
+
+<p>So you can see that we have a couple acls set up. These are set to true if the destination IP was set to this particular IP. Then, where the real magic happens is on the reqadd line. This adds a host header into the headers going to the backend if and only if we know that this is a request for a subset (which we can tell by the IP) <em>and</em> if the host header has not been set.</p>
+
+<p>The web user never sees this header. This is a header that we send only to the nginx backend.</p>
+
+<p>Of course, there are several other ways we could have done this. Instead of relying on virtual hosting in nginx, we could just have each nginx server also listen on its own IP or port. (one backend per virtual site) This would mean that HAProxy would have less work to do and could focus on routing packets, but at the expense of making our HAProxy configuration bulkier and more complex.</p>
+
+<p>We could have also put up one front end per IP and directed requests (and headers) that way, reducing the need for acls. Again, more complexity and more bulk.</p>
+
+<p>You could even argue that perhaps either (or both) alternative methods are better because HAProxy would have less work to do and could focus on routing packets around instead of inspecting each packet, possibly adding latency and overhead. These are very good arguments, and I&rsquo;d definitely be interested in benchmarks to see how much of a difference exists. However, for our purposes, HAProxy is <em>plenty</em> fast and nowhere near a bottleneck today. Perhaps I&rsquo;ll investigate those options down the road.</p>
+
+<h2>Handling SSL</h2>
+
+<p>Haproxy does not provide any SSL capabilities out of the box, so you either must decrypt the traffic before it hits HAProxy (proxy your proxy), or you can put HAProxy into &ldquo;tcp mode&rdquo; where it hands off the encrypted traffic to another load balancer.</p>
+
+<p>There are advantages and disadvantages to both. TCP mode would ensure that the traffic stays secure all the way until it absolutely must be processed. We pass traffic over a private network, so this is not too much of a concern in our situation. Ultimately I settled on decrypting it before it hits HAProxy for a couple reasons:</p>
+
+<ul>
+<li><p>Simplicity. I don&rsquo;t want to have to maintain SSL certificates and the extra configuration at each nginx server. Putting all this configuration on the front-end box is much simpler.</p></li>
+<li><p>Logging. I had already decided from the start that I wanted all access logging to happen at HAProxy instead of at nginx. Managing many logs on many servers would be a pain. If we pushed encrypted traffic to nginx, we either would have to live without the logs, or go ahead and manage logs on separate servers anyway. By decrypting traffic before it hits HAProxy, we can log that traffic just like all the other traffic.</p></li>
+<li><p>Control. This is the whole reason we elected to use HAProxy in the first place: to gain greater control over how load is distributed and processed. You still have some control over encrypted TCP traffic, but you can&rsquo;t do the same header analysis like you can in HTTP mode. We wanted to avoid having two sets of rules: one for http traffic, and one for tcp traffic.</p></li>
+<li><p>Load. Our HAProxy box is practically idle, but when we get busy, our nginxes really start working. By putting the encryption / decryption work on the load balancer, we save margin on the nginx servers to do something else.</p></li>
+</ul>
+
+
+<p>Overall, decrypting traffic before it hits HAProxy was the clear choice. The easiest way to do this (which has proven very stable so far) is to simply use stunnel to listen on port :443, do the SSL handshake, and handle all the encryption busywork. stunnel passes the clean, unencrypted connection back to HAProxy, and HAProxy treats it just like normal http traffic.</p>
+
+<p>Two key things you need to know if you are going to use stunnel:</p>
+
+<ul>
+<li><p>stunnel is a proxy, just like HAProxy is a proxy. Your HAProxy box is going to see the stunnel IP instead of your visitor&rsquo;s IP when traffic is secure. There is an <a href="http://haproxy.1wt.eu/#down">stunnel patch</a> you can apply that will add the X-Forwarded-For header to traffic so you can capture the visitor&rsquo;s IP.</p></li>
+<li><p>If you are going to apply the stunnel patch, you do not want HAProxy writing its own X-Forwarded-For header. Disable it by using &ldquo;option forwardfor except 127.0.0.1&rdquo;. This will send the X-Forwarded-For header on all requests except those coming from a local stunnel.</p></li>
+</ul>
+
+
+<h2>Health Check</h2>
+
+<p>By default, HAProxy will do a layer 4 health check just to make sure that the port your backend is on is accepting traffic.</p>
+
+<p>This, is not enough.</p>
+
+<p>We wanted to put a custom health check that we could do things like check the health of Postgres, PHP, etc, and have fine grained control over exactly when we consider a host &ldquo;dead&rdquo; and that HAProxy should stop sending requests to it.</p>
+
+<p>Fortunately, on the HAProxy side, this is very very easy. Simply specify the header HAProxy should send to the backend:</p>
+
+<div class="CodeRay">
+  <div class="code"><pre>option httpchk HEAD /example-status.php HTTP/1.1\r\nHost:\ example.com</pre></div>
+</div>
+
+
+<p>All HAProxy cares about is if it gets an HTTP 200 status back. If it does, the host is &ldquo;alive&rdquo; and will be active in the pool. If it gets any other request (say a 502 bad gateway), HAProxy immediately stops using this backend and redispatches (if option redispatch is set) all requests to other backends.</p>
+
+<p>Since this is your own script, you can write any arbitrary rules you want to define dead or alive nodes. And if you want to perform maintenance on a node, you can simply rename it to something else, and HAProxy will remove it for you. Overall, this works very, very well.</p>
+
+<h2>Putting It All Together</h2>
+
+<p>Specifics have been changed to protect the guilty, but once you put together everything, you will have something that looks like this:</p>
+
+<div class="CodeRay">
+  <div class="code"><pre>global
+        log 127.0.0.1   local0
+        maxconn 100000
+        ulimit-n 300000
+        chroot /usr/share/haproxy
+        user haproxy
+        group haproxy
+        daemon
+        # this sets how many haproxy instances to run.
+        nbproc 1
+
+defaults
+        log     global
+        mode    http
+        option  httplog
+        option  dontlognull
+        retries 3
+        option redispatch
+        contimeout      5000
+        clitimeout      50000
+        srvtimeout      50000
+
+        # very useful for monitoring your frontends and backends
+        stats enable
+        stats hide-version
+        stats uri     /sekret-stats-page
+        stats realm   Statistics
+        stats auth    admin:sekret
+
+frontend http-in
+        bind *:80
+
+        acl is_api dst  1.2.3.5
+        acl is_m dst    1.2.3.6
+        acl has_host hdr_end(host) -i example.com
+
+        reqadd Host:\ api.example.com        if is_api !has_host
+        reqadd Host:\ m.example.com          if is_m !has_host
+
+        default_backend http-out
+
+backend http-out
+        mode http
+        option httpchk HEAD /mystatus HTTP/1.1\r\nHost:\ example.com
+        balance roundrobin
+        option httpclose
+        option forwardfor except 127.0.0.1
+        server srv1 1.2.3.4:80 check
+        server srv2 1.2.3.5:80 check
+        server srv3 1.2.3.6:80 check
+        server srv4 1.2.3.7:80 check
+        server srv5 1.2.3.8:80 check
+        server srv6 1.2.3.9:80 check
+        server srv7 1.2.3.10:80 check
+        server srv8 1.2.3.11:80 check
+        server srv9 1.2.3.12:80 check
+        server srv0 1.2.3.13:80 check</pre></div>
+</div>
+
+
+<p>How are you using HAProxy to make highly available IT resources? Share in the comments.</p>
+
+<h2>Helpful Resources</h2>
+
+<ul>
+<li><a href="http://37signals.com/svn/posts/1073-nuts-bolts-haproxy">Nuts and Bolts: HAproxy (37signals)</a></li>
+<li><a href="http://www.igvita.com/2008/05/13/load-balancing-qos-with-haproxy/">Load Balancing and QoS with HAProxy</a></li>
+<li><a href="http://haproxy.1wt.eu/download/1.3/doc/architecture.txt">HAProxy Architecture Guide</a></li>
+<li><a href="http://www.buro9.com/blog/2009/12/07/installing-haproxy-load-balance-http-and-https/">Installing HAProxy and Stunnel (load balance http and https)</a></li>
+<li><a href="http://iamseanmurphy.com/2009/04/22/a-better-haproxy-health-check-for-dynamic-websites/">A Better HAProxy Health Check For Dynamic Websites</a></li>
+<li><a href="http://sysbible.org/2008/07/26/haproxy-hot-reconfiguration/">HAProxy Hot-Reconfiguration</a></li>
+<li><a href="http://unethicalblogger.com/node/258">Virtual Hosting With HAProxy and WSCGI</a></li>
+</ul></div>
+<div class='post_responses'>
+<h4>20023 views and 8 responses</h4>
+<ul class='post_responses list'>
+<li class='response clearfix'>
+<div class='response_header'>
+<div class='response_time'>Sep 23 2010,  4:28 PM</div>
+<div class='response_name'>DW Hunter responded:</div>
+</div>
+<div class='response_body'>So glad you are on the team... (brain_explodes)</div>
+</li>
+<li class='response clearfix'>
+<div class='response_header'>
+<div class='response_time'>Oct  4 2010,  7:10 AM</div>
+<div class='response_name'>Bitbud responded:</div>
+</div>
+<div class='response_body'>Did you look at just using nginx for SSL proxy rather than Stunnel?  One less this to admin.<p>You could also use nginx rather than HAProxy, although there may have been a specific reason to use HAProxy?</p><p>Glad you are on the LC team - congrats on the new job.</p></div>
+</li>
+<li class='response clearfix'>
+<div class='response_header'>
+<div class='response_time'>Oct 16 2010,  3:07 PM</div>
+<div class='response_name'>FaisalAbid (Twitter) responded:</div>
+</div>
+<div class='response_body'>Is the traffic encrypted back to the client when HAProxy returns a result from the backend servers.</div>
+</li>
+<li class='response clearfix'>
+<div class='response_header'>
+<div class='response_time'>Oct 16 2010,  5:56 PM</div>
+<div class='response_name'>AJ Bourg responded:</div>
+</div>
+<div class='response_body'><div>Yes, traffic to the client is encrypted. But, again, not by the backend servers or haproxy. It's all handled by stunnel.&nbsp;</div><div><br /></div></div>
+</li>
+<li class='response clearfix'>
+<div class='response_header'>
+<div class='response_time'>Oct 16 2010, 10:14 PM</div>
+<div class='response_name'>FaisalAbid (Twitter) responded:</div>
+</div>
+<div class='response_body'>Cool, Thanks!</div>
+</li>
+<li class='response clearfix'>
+<div class='response_header'>
+<div class='response_time'>Jul  1 2011,  2:41 AM</div>
+<div class='response_name'>panalbish responded:</div>
+</div>
+<div class='response_body'>@AJ Bourg: As you said  the client get encrypted traffic back by stunnel. How can we make it possible? Do we have to make use of client and server mode in stunnel. Since I am doing the similar setup with stunnel listening on 443 and connecting to 80 in haproxy. And Haproxy send the plain HTTP request to tomcat backend. But, reponse to client is not encrypted, as I see the secure flag is not on in cookie.</div>
+</li>
+<li class='response clearfix'>
+<div class='response_header'>
+<div class='response_time'>Jul  1 2011, 12:39 PM</div>
+<div class='response_name'>AJ Bourg responded:</div>
+</div>
+<div class='response_body'>panalbish: If you have been terminating ssl with tomcat in the past, keep in mind that now tomcat won't know the connection is secure because all it sees from stunnel/haproxy is plain text http. You will need to tweak tomcat or your tomcat application to send a cookie that requires a secure connection.</div>
+</li>
+<li class='response clearfix'>
+<div class='response_header'>
+<div class='response_time'>Feb  1 2012,  5:05 PM</div>
+<div class='response_name'>Cyberjar09 responded:</div>
+</div>
+<div class='response_body'>@FaisalAbid : this ought to answer your question :<br /><a href="https://affectioncode.wordpress.com/2008/06/11/comparing-nginx-and-haproxy-for-web-applications/" rel="nofollow">https://affectioncode.wordpress.com/2008/06/11/comparing-nginx-and-haproxy-fo...</a></div>
+</li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+</body>
+</html>

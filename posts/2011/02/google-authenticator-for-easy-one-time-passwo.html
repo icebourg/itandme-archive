@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset='utf-8'>
+<link href='../../../exports.css' rel='stylesheet'>
+<link href='../../../exports.css' rel='stylesheet'>
+
+</head>
+<body>
+<div id='wrap'>
+<div id='header'>
+<h1>IT and ME</h1>
+<h2>This is an archived post
+This is an archived post
+</h2>
+</div>
+<div id='content'><div id='nav'>
+<a href="../../../posts/2011/05/template-for-building-a-debian-package-from-s.html">Previous</a>
+&nbsp; 
+<a href="../../../index.html">Index</a>
+&nbsp; 
+<a href="../../../posts/2011/02/41901523.html">Next</a>
+</div>
+<div class='post'>
+<div class='post_header'>
+<h3>Google Authenticator for Easy One Time Passwords</h3>
+<div class='post_info'>
+<span class='post_time'>February 15 2011,  3:54 PM</span>
+<span class='author'>&nbsp;by AJ Bourg</span>
+</div>
+</div>
+<div class='post_body'><p>You probably heard that Google has recently opened <a href="http://googleblog.blogspot.com/2011/02/advanced-sign-in-security-for-your.html">two-step verification</a> for all Google accounts. I&rsquo;m still waiting for it to be activated for my main Google account, but this afternoon I set it up for my Google Apps account.</p>
+
+<p>I love that Google has implemented it across the board for all Google apps. I&rsquo;m sure a large part of the motivation was making Gmail more secure after the attempted Chinese hacking incident last year. Many of us in IT have used and administered <a href="http://www.rsa.com/node.aspx?id=1156">RSA SecurID</a> infrastructure, especially for VPNs. Google is taking advantage of the ubiquity of smart phones to open this same level of security across the landscape. Obviously, it does add a level of hassle, but I think Google has done a great job making the process easy, simple, clear and safe. You get a list of 10 backup PINs to save, and you can enter your phone number so Google can call or text you with a code.</p>
+
+<p>The really cool thing is that Google has released <a href="http://code.google.com/p/google-authenticator/">a module for PAM</a> that allows you to use exactly the same infrastructure for SSH and all other Unix services you might be running.</p>
+
+<p>I wanted to play with it and set it up in my Debian sid VM just to see how the process works. It&rsquo;s pretty easy.</p>
+
+<h2>Setup</h2>
+
+<p>First, you just need to install the PAM headers, sudo and mercurial if you don&rsquo;t them it already:</p>
+
+<div class="CodeRay">
+  <div class="code"><pre>apt-get install mercurial libpam0g-dev sudo</pre></div>
+</div>
+
+
+<p>Next, we need to download the module. The easiest way is just to use mercurial to clone the source from Google Code:</p>
+
+<div class="CodeRay">
+  <div class="code"><pre>hg clone https://google-authenticator.googlecode.com/hg/ google-authenticator/</pre></div>
+</div>
+
+
+<p>Go ahead and build/install it:</p>
+
+<div class="CodeRay">
+  <div class="code"><pre>cd google-authenticator/libpam
+make install</pre></div>
+</div>
+
+
+<p>Activate it within PAM for sshd by adding &ldquo;auth required pam_google_authenticator.so&rdquo; to /etc/pam.d/sshd. You&rsquo;ll also need to set ChallengeResponseAuthentication to yes in /etc/ssh/sshd_config and restart ssh.</p>
+
+<p>Now, all you need to do is download the Google Authenticator app for your phone (available for iPhone, Android and BlackBerry) and generate the codes for your user by running google-authenticator.</p>
+
+<p>It will give you an URL you can open in your browser to view a QR code. Scan the QR code on your phone and, tada, your account will show up within the Google authenticator app. You will also be given a list of emergency scratch codes. Save these in a safe place in case you lose your phone.</p>
+
+<p>Now try logging in to your SSH account again. After typing your password, you will be prompted for the latest verification code. Get it off your phone, type it in correctly, and you will be granted access. If you have SSH keys setup, you will not have to enter a verification code at all.</p>
+
+<h2>Thoughts</h2>
+
+<p><a href="http://en.wikipedia.org/wiki/OPIE_Authentication_System">Opie</a> has been around forever and I don&rsquo;t think it has ever been extremely widespread. Will the added convenience and security of using the mobile app to generate a time based key change all that? Maybe. But I think it&rsquo;s more likely that RSA won&rsquo;t be selling as many SecurIDs in the future. :)</p>
+
+<p>I definitely think there is some potential in using OTPs with an SSH gateway and SSH key forwarding. Whenever I look to see all the brute force attacks against any public server, I always think about locking SSH away on a private interface and using an SSH gateway to control access and monitor potential attacks. I could see requiring only password (plus OTP) logins to your gateway, then allowing only (forwarded) key logins to destination servers. To actually successfully login and cause damage to one of my servers, I would have to steal your password and your phone to get into the gateway, then steal your key to get into the remote server. That kind of security is extremely resilient, and very attractive to this paranoid sysadmin.</p>
+
+<p>I&rsquo;m sure there are probably a couple of weak areas you&rsquo;d have to really think through, such as session jacking on the gateway, but with a little thought, you could really increase security by diversifying the number of ways you have to authenticate. By having the OTP exist at the gateway level, you would only need to set up your OTP account once, and you could stay connected to the gateway throughout the day, minimizing the amount of hassle users will have in adopting OTP accounts.</p>
+
+<p>Now that OTP passwords are becoming more mainstream with Google&rsquo;s push, will you be doing anything different with your infrastructure?</p>
+
+<h2>Further Reading</h2>
+
+<ul>
+<li><a href="http://www.mindtwist.de/main/linux/5-linux-security/6-how-to-use-one-time-ssh-passwords-on-debianubuntu.html">Setting up OTP SSH passwords on Debian/Ubuntu</a></li>
+<li><a href="http://www.ibiblio.org/macsupport/sshd/">PAM and SSHD</a></li>
+<li><a href="http://code.google.com/p/google-authenticator/">Google Authenticator</a></li>
+<li><a href="http://www.google.com/support/accounts/bin/answer.py?hl=en&amp;answer=1066447">Using Google Authenticator App</a></li>
+</ul></div>
+<div class='post_responses'>
+<h4>9211 views and 1 response</h4>
+<ul class='post_responses list'>
+<li class='response clearfix'>
+<div class='response_header'>
+<div class='response_time'>Nov  9 2011, 11:08 AM</div>
+<div class='response_name'>Chancho responded:</div>
+</div>
+<div class='response_body'>Do you have any idea how to compile google authenticator pam on os x?</div>
+</li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+</body>
+</html>

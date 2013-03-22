@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset='utf-8'>
+<link href='../../../exports.css' rel='stylesheet'>
+<link href='../../../exports.css' rel='stylesheet'>
+
+</head>
+<body>
+<div id='wrap'>
+<div id='header'>
+<h1>IT and ME</h1>
+<h2>This is an archived post
+This is an archived post
+</h2>
+</div>
+<div id='content'><div id='nav'>
+<a href="../../../posts/2010/09/debian-backportsorg-now-official.html">Previous</a>
+&nbsp; 
+<a href="../../../index.html">Index</a>
+&nbsp; 
+<a href="../../../posts/2010/07/iphone-4-impressions.html">Next</a>
+</div>
+<div class='post'>
+<div class='post_header'>
+<h3>Building Custom Debian Packages</h3>
+<div class='post_info'>
+<span class='post_time'>August  9 2010,  3:07 PM</span>
+<span class='author'>&nbsp;by AJ Bourg</span>
+</div>
+</div>
+<div class='post_body'><p>I admit it, I really am a Debian fanboy. I like their principled stand for <a href="http://www.debian.org/intro/free">software freedom</a>, I like their packaging system (apt), and I really like using Debian for production servers because they are fanatical about making sure each package is stable.</p>
+
+<p>Debian is rock solid and a very reliable distro. And for most purposes, it&rsquo;s great.</p>
+
+<p>But sometimes, packages can get a little&hellip; old. And sometimes you need/want an updated version of a package. Often times you can find the perfect package in <a href="http://backports.org/dokuwiki/doku.php">backports</a>. If you really are daring, you can try unstable. But sometimes, you just want to make a custom package.</p>
+
+<p>For me, this came up in our use of nginx. We use nginx for everything, and use the nginx eval module heavily. I wanted to build our own nginx package so that we could include the non-standard eval module in all our server builds.</p>
+
+<p>Fortunately, Debian has a great package building system that makes it very easy to replace packages with your own version.</p>
+
+<p>Here&rsquo;s what I did to make it happen.</p>
+
+<h1>Preparation</h1>
+
+<p>In my case, I just want to update an existing package. So I&rsquo;m going create a couple directories to keep things handy. In my case, my tree structure looks like:</p>
+
+<div class="CodeRay">
+  <div class="code"><pre>~/nginxbuild
+~/nginxbuild/debian/
+~/nginxbuild/nginx-0.7.67/</pre></div>
+</div>
+
+
+<p>nginx 0.7.67 is the latest stable version according to <a href="http://nginx.org/">nginx.org</a>, at the time of this writing.</p>
+
+<p>In the debian directory, download the source of the nginx package, like so:</p>
+
+<p>apt-get source nginx</p>
+
+<p>Your ~/nginxbuild/debian will then look something like this:</p>
+
+<div class="CodeRay">
+  <div class="code"><pre>drwxr-xr-x 10 root root   4096 Aug  9 16:36 nginx-0.7.67
+-rw-r--r--  1 root root  24276 Jul 29 11:47 nginx_0.7.67-3.debian.tar.gz
+-rw-r--r--  1 root root   1297 Jul 29 11:47 nginx_0.7.67-3.dsc
+-rw-r--r--  1 root root 608462 Jun 15 17:01 nginx_0.7.67.orig.tar.gz</pre></div>
+</div>
+
+
+<p>Next, I am going to download the latest stable nginx to ~/nginxbuild. Fortunately it comes as a tarball, so you can just decompress it. When you do, you should have a ~/nginxbuild/nginx-0.7.67/ directory that looks like this:</p>
+
+<div class="CodeRay">
+  <div class="code"><pre>ls -lah nginx-0.7.67
+total 380K
+drwxr-xr-x 7 abourg abourg 4.0K Jun 15 04:55 .
+drwxr-xr-x 4 root   root   4.0K Aug  9 16:38 ..
+drwxr-xr-x 6 abourg abourg 4.0K Aug  9 16:38 auto
+-rw-r--r-- 1 abourg abourg 161K Jun 15 04:55 CHANGES
+-rw-r--r-- 1 abourg abourg 166K Jun 15 04:55 CHANGES.ru
+drwxr-xr-x 2 abourg abourg 4.0K Aug  9 16:38 conf
+-rwxr-xr-x 1 abourg abourg 2.2K May 10  2009 configure
+drwxr-xr-x 3 abourg abourg 4.0K Aug  9 16:38 contrib
+drwxr-xr-x 2 abourg abourg 4.0K Aug  9 16:38 html
+-rw-r--r-- 1 abourg abourg 1.3K Feb  1  2010 LICENSE
+-rw-r--r-- 1 abourg abourg  127 Oct 12  2006 README
+drwxr-xr-x 8 abourg abourg 4.0K Aug  9 16:38 src</pre></div>
+</div>
+
+
+<p>So, to recap, ~/nginxbuild/debian contains the older nginx, in the form of Debian package sources. And ~/nginxbuild/nginx-0.7.67 contains the source for the lastest nginx. Time to start putting them together.</p>
+
+<h1>Copy the Magical debian Directory</h1>
+
+<p>The easiest thing to do is to just copy the debian directory from the Debian package into ~/nginxbuild/nginx-0.7.67/:</p>
+
+<div class="CodeRay">
+  <div class="code"><pre>cp -r ~/nginxbuild/debian/nginx-0.7.67/debian/ ~/nginxbuild/nginx-0.7.67/</pre></div>
+</div>
+
+
+<p>This debian directory contains many required files that tell the dpkg manager what to do. Now we need to make some tweaks.</p>
+
+<h1>Tweaks. Magical Tweaks.</h1>
+
+<p>The ~/nginxbuild/nginx-0.7.67/debian/rules file contains a Makefile, basically, of what to do with the package. It also contains your ./configure instructions. So this is where I want to add my new module and make any other tweaks to the configure script.</p>
+
+<p>You&rsquo;ll see the configure rules under config.status.</p>
+
+<div class="CodeRay">
+  <div class="code"><pre>config.status:
+        dh_testdir
+ifneq &quot;$(wildcard /usr/share/misc/config.sub)&quot; &quot;&quot;
+                cp -f /usr/share/misc/config.sub config.sub
+endif
+ifneq &quot;$(wildcard /usr/share/misc/config.guess)&quot; &quot;&quot;
+                cp -f /usr/share/misc/config.guess config.guess
+endif
+        ./configure --conf-path=/etc/nginx/nginx.conf \
+            --error-log-path=/var/log/nginx/error.log \
+            --http-client-body-temp-path=/var/lib/nginx/body \
+            --http-fastcgi-temp-path=/var/lib/nginx/fastcgi \
+            --http-log-path=/var/log/nginx/access.log \
+            --http-proxy-temp-path=/var/lib/nginx/proxy \
+            --lock-path=/var/lock/nginx.lock \
+            --pid-path=/var/run/nginx.pid \
+            --with-debug \
+            --with-http_dav_module \
+            --with-http_flv_module \
+            --with-http_geoip_module \
+            --with-http_gzip_static_module \
+            --with-http_realip_module \
+            --with-http_stub_status_module \
+            --with-http_ssl_module \
+            --with-http_sub_module \
+            --with-ipv6 \
+            --with-mail \
+            --with-mail_ssl_module \
+            --add-module=$(CURDIR)/modules/nginx-upstream-fair \
+            $(CONFIGURE_OPTS)</pre></div>
+</div>
+
+
+<p>Just add my module to the end of the list:</p>
+
+<div class="CodeRay">
+  <div class="code"><pre>config.status:
+        dh_testdir
+ifneq &quot;$(wildcard /usr/share/misc/config.sub)&quot; &quot;&quot;
+                cp -f /usr/share/misc/config.sub config.sub
+endif
+ifneq &quot;$(wildcard /usr/share/misc/config.guess)&quot; &quot;&quot;
+                cp -f /usr/share/misc/config.guess config.guess
+endif
+        ./configure --conf-path=/etc/nginx/nginx.conf \
+            --error-log-path=/var/log/nginx/error.log \
+            --http-client-body-temp-path=/var/lib/nginx/body \
+            --http-fastcgi-temp-path=/var/lib/nginx/fastcgi \
+            --http-log-path=/var/log/nginx/access.log \
+            --http-proxy-temp-path=/var/lib/nginx/proxy \
+            --lock-path=/var/lock/nginx.lock \
+            --pid-path=/var/run/nginx.pid \
+            --with-debug \
+            --with-http_dav_module \
+            --with-http_flv_module \
+            --with-http_geoip_module \
+            --with-http_gzip_static_module \
+            --with-http_realip_module \
+            --with-http_stub_status_module \
+            --with-http_ssl_module \
+            --with-http_sub_module \
+            --with-ipv6 \
+            --with-mail \
+            --with-mail_ssl_module \
+            --add-module=$(CURDIR)/modules/nginx-upstream-fair \
+            --add-module=/root/nginx_eval_module-1.0.1 \
+            $(CONFIGURE_OPTS)</pre></div>
+</div>
+
+
+<p>There are other tweaks you can make in the debian directory, but for now, I will leave it as is.</p>
+
+<h1>Build Your Package</h1>
+
+<p>Now, just navigate to the top of your source tree: cd ~/nginxbuild/nginx-0.7.67</p>
+
+<p>Then, you just need to build the package: dpkg-buildpackage -rfakeroot -uc -b -us</p>
+
+<ul>
+<li>-rfakeroot tells it to use fakeroot to gain root privileges</li>
+<li>-uc do not sign the .changes</li>
+<li>-us do not sign the source package</li>
+<li>-b binary only build, don&rsquo;t build a source package</li>
+</ul>
+
+
+<p>I use -uc and -us because, at the moment, I don&rsquo;t have any signing mechanism. Probably something to add to the todo list. :)</p>
+
+<p>Once you run that command, you will see it configure nginx, build it, and package it.</p>
+
+<p>If everything went right, in ~/nginxbuild you will have a variety of new files:</p>
+
+<div class="CodeRay">
+  <div class="code"><pre>nginx_0.7.67-3_amd64.changes
+nginx_0.7.67-3_amd64.deb
+nginx-dbg_0.7.67-3_amd64.deb</pre></div>
+</div>
+
+
+<p>nginx_0.7.67-3_amd64.deb is the one that you will want to distribute to your machines. It contains all the niceties of the default Debian package, plus the newer nginx version, plus the additional module.</p>
+
+<p>If you liked this guide, please post in the comments.</p>
+
+<h2>Helpful Resources</h2>
+
+<ul>
+<li><a href="http://david415.wordpress.com/2008/09/10/customdebianopensshpackagebuild/">Build a Custom Debian Package of the Latest OpenSSH (really helpful)</a></li>
+<li><a href="http://www.debian-administration.org/articles/337">Rolling Your Own Debian Packages (pt2)</a></li>
+<li><a href="http://www.linuxfordevices.com/c/a/Linux-For-Devices-Articles/How-to-make-deb-packages/">How to make Deb Packages</a></li>
+<li><a href="http://ubuntuforums.org/showthread.php?t=1105902">How to always have the latest Nginx .deb package</a></li>
+<li><a href="http://www.ruby-forum.com/topic/182274">How to always have the latest nginx version in Ubuntu/Debian</a></li>
+<li><a href="http://nginx.org/en/download.html">nginx releases</a></li>
+</ul></div>
+<div class='post_responses'>
+<h4>13010 views and 6 responses</h4>
+<ul class='post_responses list'>
+<li class='response clearfix'>
+<div class='response_header'>
+<div class='response_time'>Sep 12 2010,  8:21 AM</div>
+<div class='response_name'>spirit responded:</div>
+</div>
+<div class='response_body'>Great article. I'll test it very soon.<p>Do you have the same procedure to build a php5.2.XX package with php-fpm patch included ?</p><p>Thanks</p></div>
+</li>
+<li class='response clearfix'>
+<div class='response_header'>
+<div class='response_time'>Sep 13 2010,  8:54 AM</div>
+<div class='response_name'>AJ Bourg responded:</div>
+</div>
+<div class='response_body'>You should be able to use the same procedure for any Debian package. Just use patch to apply the patch as you normally would, then repackage the whole things as a dpkg as above.<p>Alternatively, there is a PHP 5.3 package with FPM built-in in Debian backports that might be worth checking out. That is what we use.</p><p>AJ</p></div>
+</li>
+<li class='response clearfix'>
+<div class='response_header'>
+<div class='response_time'>Sep 13 2010,  9:30 AM</div>
+<div class='response_name'>spirit responded:</div>
+</div>
+<div class='response_body'>Have you already tried it for php 5.2.X ?<p>Yes I know 5.3 has a package but I'm still afraid of any bug/incompatibility to migrate my apps...</p></div>
+</li>
+<li class='response clearfix'>
+<div class='response_header'>
+<div class='response_time'>Sep 13 2010,  9:48 AM</div>
+<div class='response_name'>AJ Bourg responded:</div>
+</div>
+<div class='response_body'>No, I haven&#39;t tried it for 5.2. When you do, let us know how it goes! :)</div>
+</li>
+<li class='response clearfix'>
+<div class='response_header'>
+<div class='response_time'>Sep 13 2010,  2:19 PM</div>
+<div class='response_name'>spirit responded:</div>
+</div>
+<div class='response_body'>Well I'm trying your procedure right now... somethink I'm wondering:<br />the command "apt-get source nginx" should grab the source of the same version you want install ?<p>In your example this command grabs source for 0.7.67.</p></div>
+</li>
+<li class='response clearfix'>
+<div class='response_header'>
+<div class='response_time'>Sep 13 2010,  2:42 PM</div>
+<div class='response_name'>AJ Bourg responded:</div>
+</div>
+<div class='response_body'>apt-get source nginx gets whatever version is in the Debian repository. Which, for PHP, is probably 5.2.n. So you wouldn&#39;t need to update the Debian source unless you wanted 5.2.n+1. You could just apply the patch to your source directory and repackage.</div>
+</li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+</body>
+</html>

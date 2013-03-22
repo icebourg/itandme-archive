@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset='utf-8'>
+<link href='../../../exports.css' rel='stylesheet'>
+<link href='../../../exports.css' rel='stylesheet'>
+
+</head>
+<body>
+<div id='wrap'>
+<div id='header'>
+<h1>IT and ME</h1>
+<h2>This is an archived post
+This is an archived post
+</h2>
+</div>
+<div id='content'><div id='nav'>
+<a href="../../../posts/2010/07/the-evo-4g-why-im-returning-it-and-getting-an.html">Previous</a>
+&nbsp; 
+<a href="../../../index.html">Index</a>
+&nbsp; 
+<a href="../../../posts/2010/06/old-dog-new-tricks.html">Next</a>
+</div>
+<div class='post'>
+<div class='post_header'>
+<h3>Managing iptables through puppet</h3>
+<div class='post_info'>
+<span class='post_time'>June 22 2010,  8:46 AM</span>
+<span class='author'>&nbsp;by AJ Bourg</span>
+</div>
+</div>
+<div class='post_body'><p>We continue to push forward with our new Puppet platform. <a href="http://itand.me/using-puppet-to-manage-users-passwords-and-ss">In part 1</a> I shared how we use Puppet to manage users centrally without any central authentication servers. (NIS, LDAP, etc)</p>
+
+<p>Today, I&rsquo;m going to share how we use puppet to manage a diverse set of iptables on diversely configured equipment. There are probably a thousand different ways to configure puppet to manage iptables, each with its own pros and cons. This is way #1001.</p>
+
+<h2>How It Works</h2>
+
+<p>Our iptables setup revolves around the concept of file fragments. I intentionally modeled it after how Debian packages all their httpd servers such as Apache, lighttpd, and nginx.</p>
+
+<p>For those that don&rsquo;t know, Debian&rsquo;s packaging for nginx configuration looks something like this:</p>
+
+<p>/etc/nginx/nginx.conf
+/etc/nginx/sites-available/
+/etc/nginx/sites-enabled/</p>
+
+<p>All of your site configuration files go in the sites-available folder. Then when you are ready to enable a site, you just put a symlink in the sites-enabled folder pointing to the config file you want to enable in sites-available. I have grown to become a big fan of this setup. To the point that I am duplicating this exact setup for iptables.</p>
+
+<p>So, within puppet, I have setup the following file structure on each managed server:</p>
+
+<p>/etc/iptables/
+/etc/iptables/config-available/
+/etc/iptables/config-enabled/</p>
+
+<p>All of the configuration in config-available is prepared in advance by me and distributed by puppet to each node. Within puppet, I tell it which files to copy from config-available to config-enabled. (I do not symlink the files <a href="http://itand.me/old-dog-new-tricks-2">because of an issue in puppet</a>)</p>
+
+<p>Each configuration file is really just a shell script. I wrote another shell script (init-iptables.sh) that looks in the config-enabled directory and just executes everything it finds there. Puppet is configured to run init-iptables.sh any time config-enabled is updated. A copy of the file is placed in /etc/network/if-up.d/ directory so that the iptables rules will reload upon boot-up.</p>
+
+<h2>Code</h2>
+
+<p>This is iptables.pp, which defines the iptables class and a function for enabling configuration.</p>
+
+<div class="CodeRay">
+  <div class="code"><pre>class iptables {
+
+            package { iptables:
+                    ensure  =&gt; installed,
+            }
+
+            file { [ &quot;/etc/iptables&quot;, &quot;/etc/iptables/config-enabled&quot; ]:
+                    ensure  =&gt; directory,
+                    mode    =&gt; 755,
+                    owner   =&gt; root,
+                    group   =&gt; root,
+            }
+
+            exec { &quot;/narnia/tools/initiptables.sh&quot;:
+                    #subscribe      =&gt; file[&quot;/etc/iptables/config-available&quot;],
+                    refreshonly     =&gt; true,
+                    require         =&gt; [ package[iptables], exec[update-narnia] ],
+            }
+
+            file { &quot;/etc/network/if-up.d/iptables&quot;:
+                    ensure  =&gt; file,
+                    mode    =&gt; 755,
+                    source  =&gt; &quot;/narnia/tools/initiptables.sh&quot;,
+                    require =&gt; [ package[iptables], exec[update-narnia] ]
+            }
+    }
+
+    #
+    #
+    # Enable a certain script file by copying it from /etc/iptables/
+    #  config-available to /etc/iptables/config-enabled and running it.
+    #
+    #
+
+    define enable-iptables () {
+
+            include iptables
+
+            $script = &quot;/etc/iptables/config-enabled/${title}.sh&quot;
+
+            # Make sure the file has the proper copy, and notify the iptables
+            # script to run
+
+            file { $script:
+                    ensure  =&gt; file,
+                    source  =&gt;  &quot;/narnia/config/etc/iptables/config-available/${title}.sh&quot;,
+                    require =&gt; [ file[&quot;/etc/iptables/config-enabled&quot;], exec[update-narnia] ],
+                    notify  =&gt; exec[&quot;/narnia/tools/initiptables.sh&quot;],
+            }
+    }</pre></div>
+</div>
+
+
+<p>A couple of things to note here:</p>
+
+<ul>
+<li>Narnia is our shared &ldquo;file-system&rdquo; (really just an rsync'ed directory under /narnia). All nodes share a copy of this server. exec[update-narnia] is defined elsewhere and just ensures that the copy has been rsynced before proceeding. I will blog about this at some point.</li>
+<li>We are running 100% Debian. Package names, locations of config files, etc may vary if you use a different distribution.</li>
+</ul>
+
+
+<p>Here is the initiptables.sh script:</p>
+
+<div class="CodeRay">
+  <div class="code"><pre>#!/bin/bash
+
+    # we will iterate over this directory and run every script in it
+    dir=`ls /etc/iptables/config-enabled/`
+
+    # but first, clear the existing iptables rules for a fresh slate
+    iptables -F
+    iptables -X
+
+    # now iterate over each enabled config which will populate new iptables rules
+    for file in $dir
+    do
+            /etc/iptables/config-enabled/$file
+    done</pre></div>
+</div>
+
+
+<p>Pretty simple. Just open the config-enabled directory and execute everything you find. This file lives in /narnia and puppet automatically calls it any time we update the config-enabled directory. It also lives as a copy in /etc/network/if-up.d/iptables which will ensure all the config-enabled rules will be executed when the network interface is brought up.</p>
+
+<p>Now here&rsquo;s a sample rule. I rate limit SSH to help limit brute-force attacks. I know about Fail2Ban, DenyHosts, etc, this is just a simple way to keep people from abusing our servers. ssh.sh:</p>
+
+<div class="CodeRay">
+  <div class="code"><pre>#!/bin/bash
+
+    # Limit SSH connections to 3 every 90 seconds. Throttle it down to help limit
+    # bruteforce attempts as much as possible. Must have an relevant kernel.
+
+    # This notes every NEW connection to port 22 (ssh) and adds it to the recent &quot;list&quot;
+    iptables -I INPUT -p tcp --dport 22 -i eth0 -m state --state NEW -m recent --set
+
+    # If your IP is on the recent list, and you have 4 or more entries on the list in the
+    # last 90 seconds, we drop your request. Buh bye!
+    iptables -I INPUT -p tcp --dport 22 -i eth0 -m state --state NEW -m recent --update --seconds 90 --hitcount 4 -j DROP</pre></div>
+</div>
+
+
+<h2>Putting It All Together</h2>
+
+<p>The iptables.pp class needs to be available on the puppetmaster in /etc/puppet/manifests/classes/iptables.pp.</p>
+
+<p>The initiptables.sh and ssh.sh scripts need to be available to each node. We use narnia and put initiptables.sh in /narnia/tools/initiptables.sh and ssh will go in /narnia/config/etc/iptables/config-available/ssh.sh. You do not need your own Narnia to make this work, but you do need some way to get these files to your nodes. (you can use puppet&rsquo;s built-in mechanism)</p>
+
+<p>Here is a portion of our /etc/puppet/manifests/site.pp file where we add the SSH rule to a host:</p>
+
+<div class="CodeRay">
+  <div class="code"><pre>node debiandev inherits default {
+        # SSH rate limiter
+        enable-iptables{ ssh: }
+    }</pre></div>
+</div>
+
+
+<p>We don&rsquo;t need to include iptables here because the enable-iptables function does that for us.</p>
+
+<p>That&rsquo;s all there is to it! Let me know if you have any questions in the comments. If you liked this blog, let me know so I know it&rsquo;s valuable to someone.</p>
+
+<h2>Helpful Resources</h2>
+
+<ul>
+<li><a href="http://www.cae.wisc.edu/iptables-using">Using iptables</a></li>
+<li><a href="http://www.debian-administration.org/articles/445">Getting IPTables to survive a reboot</a></li>
+</ul></div>
+<div class='post_responses'>
+<h4>11334 views and 1 response</h4>
+<ul class='post_responses list'>
+<li class='response clearfix'>
+<div class='response_header'>
+<div class='response_time'>May 17 2012,  8:02 AM</div>
+<div class='response_name'>Matt responded:</div>
+</div>
+<div class='response_body'>Yes this was very useful.  Great example of expanding puppet as well.</div>
+</li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+</body>
+</html>

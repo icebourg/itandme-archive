@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset='utf-8'>
+<link href='../../../exports.css' rel='stylesheet'>
+<link href='../../../exports.css' rel='stylesheet'>
+
+</head>
+<body>
+<div id='wrap'>
+<div id='header'>
+<h1>IT and ME</h1>
+<h2>This is an archived post
+This is an archived post
+</h2>
+</div>
+<div id='content'><div id='nav'>
+<a href="../../../posts/2011/02/41901523.html">Previous</a>
+&nbsp; 
+<a href="../../../index.html">Index</a>
+&nbsp; 
+<a href="../../../posts/2011/01/quick-and-easy-mac-screen-sharing.html">Next</a>
+</div>
+<div class='post'>
+<div class='post_header'>
+<h3>Augeas Makes Slicing and Dicing Config Files Easier than a Cuisinart</h3>
+<div class='post_info'>
+<span class='post_time'>January 27 2011, 11:35 AM</span>
+<span class='author'>&nbsp;by AJ Bourg</span>
+</div>
+</div>
+<div class='post_body'><p>One of the coolest tools I&rsquo;ve discovered in my work with <a href="http://www.Puppetlabs.com/">Puppet</a> is <a href="http://Augeas.net/index.html">Augeas</a>. Augeas takes configuration files, and turns all the settings into a tree structure that you can manipulate like a file-system. Augeas takes disparate config files (ini, key/value, Apache, etc) and, in a way, turns them into an api. How cool is that!?</p>
+
+<p>Here&rsquo;s something I worked on just this morning. I have a bunch of rsyncd servers, and I want to add a new section to each server. Ultimately, I will do this in Puppet, but I don&rsquo;t want to specify a general /etc/rsyncd.conf file, because each host has other entries that are going to be different. Augeas is the perfect tool for this job, because I can tell it exactly what lines I want to add and where, and it won&rsquo;t change the rest of the file. The Puppet file tool is a chainsaw, while Augeas is a precise surgical instrument.</p>
+
+<p><strong>Installation</strong><br />
+First, you&rsquo;re going to need the Augeas tool set. This includes augtool, which lets you interactively edit config files. If you&rsquo;re on Debian (and have <a href="http://backports.debian.org/Instructions/">backports</a> setup), all you need to do is <em>apt-get install augeas-lenses augeas-tools libaugeas-ruby1.8 libaugeas0 -t lenny-backports</em>.</p>
+
+<p><strong>Interactive Shell</strong><br />
+Before writing my Puppet Augeas definition, I like to test my changes interactively with augtool to make sure it works properly. So fire up <em>augtool</em>, and you&rsquo;ll be presented with the Augeas interactive shell.</p>
+
+<p>First, a couple pointers. <em>help</em> will show you help, and you can always type help <em></em> to get info about a particular command. Within Augeas, you have a pseudo-filesystem accessible from /. You can <em>ls /</em>, and you will see the trees Augeas sets up. We&rsquo;ll mostly use /files, which gives us access to Augeas compatible files in the local filesystem.</p>
+
+<p>Augeas doesn&rsquo;t let you edit any random file. Augeas needs to understand the syntax of the file and how it is structured, and for this, it uses files called Augeas lenses. You can <a href="http://Augeas.net/docs/lenses.html">download Augeas lenses</a>, and can write your own. Fortunately, most system config files have a lens pre-written. The only files you will see listed in augtool <em>ls </em> print-outs are files that Augeas has a lens for. So if you&rsquo;re trying to edit a file that should show up in /files/etc/bobsconfig.cnf, and it&rsquo;s not showing up—you probably need to find or make a lens for Augeas to understand the format.</p>
+
+<p>Now, let&rsquo;s get to work editing our rsyncd.conf file. Fortunately, Augeas has a lens for it already, so it shows up. If we <em>ls /files/etc/rsyncd.conf/</em>, we&rsquo;ll see that it shows up as well as the contents of the file.</p>
+
+<p><strong>It&rsquo;s Full of Trees!</strong></p>
+
+<div class="CodeRay">
+  <div class="code"><pre>augtool&gt; ls /files/etc/rsyncd.conf/
+.anon/ = (none)
+home/ = (none)</pre></div>
+</div>
+
+
+<p>.anon is just the first block in the rsyncd.conf file with the pid file, max connections, etc. It doesn&rsquo;t belong to a server block, so Augeas just assigns it the name .anon so we have a place to put that stuff.</p>
+
+<p>The home/ entry is a server block I have setup that&rsquo;s called home, if I dig deeper into it, you can see all the settings I have setup for it:</p>
+
+<div class="CodeRay">
+  <div class="code"><pre>augtool&gt; print /files/etc/rsyncd.conf/home/
+/files/etc/rsyncd.conf/home
+/files/etc/rsyncd.conf/home/comment = &quot;Allow my home folder to be backed up to the backup server&quot;
+/files/etc/rsyncd.conf/home/path = &quot;/home/me&quot;
+/files/etc/rsyncd.conf/home/read only = &quot;yes&quot;
+/files/etc/rsyncd.conf/home/list = &quot;yes&quot;
+/files/etc/rsyncd.conf/home/hosts allow = &quot;10.11.12.13&quot;</pre></div>
+</div>
+
+
+<p>This shows how Augeas is making this config file into a tree, and you can begin to see how Augeas lets you interact with config files.</p>
+
+<p><strong>Setting Values</strong><br />
+Now let&rsquo;s create our own new section in the config file. For that, we&rsquo;re going to use the <em>ins</em> command.</p>
+
+<div class="CodeRay">
+  <div class="code"><pre>augtool&gt; ins var-dub after /files/etc/rsyncd.conf/.anon/</pre></div>
+</div>
+
+
+<p>You won&rsquo;t get any output back, but let&rsquo;s start populating some values</p>
+
+<div class="CodeRay">
+  <div class="code"><pre>set /files/etc/rsyncd.conf/var-dub/comment &quot;/var/www on my leet new server&quot;
+set /files/etc/rsyncd.conf/var-dub/path '/var/www'
+set '/files/etc/rsyncd.conf/var-dub/read\ only' yes
+set /files/etc/rsyncd.conf/var-dub/list yes
+set '/files/etc/rsyncd.conf/var-dub/hosts\ allow' '10.11.12.13'</pre></div>
+</div>
+
+
+<p>Now let&rsquo;s <em>print</em> it so we know it has all the values we need:</p>
+
+<div class="CodeRay">
+  <div class="code"><pre>augtool&gt; print /files/etc/rsyncd.conf/var-dub/
+/files/etc/rsyncd.conf/var-dub
+/files/etc/rsyncd.conf/var-dub/comment = &quot;/var/www on my leet new server&quot;
+/files/etc/rsyncd.conf/var-dub/path = &quot;/var/www&quot;
+/files/etc/rsyncd.conf/var-dub/read only = &quot;yes&quot;
+/files/etc/rsyncd.conf/var-dub/list = &quot;yes&quot;
+/files/etc/rsyncd.conf/var-dub/hosts allow = &quot;10.11.12.13&quot;</pre></div>
+</div>
+
+
+<p>Yup. Looks good to me. Let&rsquo;s go ahead and save the file and check to see what our new config file looks like:</p>
+
+<div class="CodeRay">
+  <div class="code"><pre>augtool&gt; save
+Saved 1 file(s)
+augtool&gt; quit
+peter:~# cat /etc/rsyncd.conf 
+max connections= 20
+log file= /var/log/rsync.log
+timeout= 300  
+
+[var-dub]
+  comment= /var/www on my leet new server
+  path= /var/www
+  read only= yes
+  list= yes
+  hosts allow= 10.11.12.13</pre></div>
+</div>
+
+
+<p><strong>Wrapping Up</strong><br />
+So there you have it, a fast and easy way to manipulate config files in a programmatic way. This works great with the <a href="http://projects.Puppetlabs.com/projects/Puppet/wiki/Puppet_Augeas">Augeas module</a> for Puppet. It&rsquo;s also great for automating changes that can only be made in a config file. For example, I have some auto-scaling tools setup that will automatically add and remove virtual machines within haproxy&rsquo;s load balancer.</p>
+
+<p>I just use an haproxy Augeas lens and use Augeas to manipulate the config file in exactly the same way we did with rsyncd&rsquo;s config. In the past I would have used a template with sed, awk and grep to do the same thing, but Augeas is much easier. It&rsquo;s also safer because Augeas understands the file format, and won&rsquo;t write out a config that is syntactically invalid. (but you are still responsible for making sure the config does what you want it to!)</p>
+
+<p><strong>Further Reading</strong></p>
+
+<ul>
+<li><a href="http://augeas.net/tour.html">Augeas Quick Tour</a></li>
+<li><a href="http://augeas.net/docs/tree.html">Augeas Tree Structure</a></li>
+<li><a href="http://augeas.net/docs/lenses.html">Augeas Lenses</a></li>
+<li><a href="http://projects.puppetlabs.com/projects/puppet/wiki/Puppet_Augeas">Augeas Module for Puppet</a></li>
+<li><a href="http://www.redmonk.com/cote/2009/06/16/redmonkradio062/">Puppet, Augeas, Cft, RedHat, and Cobbler – RedMonk Radio Podcast</a></li>
+</ul></div>
+<div class='post_responses'>
+<h4>9866 views and 1 response</h4>
+<ul class='post_responses list'>
+<li class='response clearfix'>
+<div class='response_header'>
+<div class='response_time'>May 17 2011,  3:10 PM</div>
+<div class='response_name'>infwonder responded:</div>
+</div>
+<div class='response_body'>Thank you! This is exactly what I am looking for!</div>
+</li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+</body>
+</html>

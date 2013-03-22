@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset='utf-8'>
+<link href='../../../exports.css' rel='stylesheet'>
+<link href='../../../exports.css' rel='stylesheet'>
+
+</head>
+<body>
+<div id='wrap'>
+<div id='header'>
+<h1>IT and ME</h1>
+<h2>This is an archived post
+This is an archived post
+</h2>
+</div>
+<div id='content'><div id='nav'>
+<a href="../../../posts/2011/09/now-hiring.html">Previous</a>
+&nbsp; 
+<a href="../../../index.html">Index</a>
+&nbsp; 
+<a href="../../../posts/2011/07/how-to-communicate.html">Next</a>
+</div>
+<div class='post'>
+<div class='post_header'>
+<h3>Mac OS X Lion, .local domains, and /etc/hosts. Oh my.</h3>
+<div class='post_info'>
+<span class='post_time'>August 31 2011,  9:17 AM</span>
+<span class='author'>&nbsp;by AJ Bourg</span>
+</div>
+</div>
+<div class='post_body'><p>One of the pain points I've discovered recently with the new version of OS X Lion is how it handles (or, rather, doesn't handle) .local domains in /etc/hosts. We use .local domains heavily in our development environment, and they no longer work in Lion. All .local domains are technically reserved for Multicast DNS (Bonjour), and Lion no longer looks in /etc/hosts first when you try to lookup a .local domain. Instead, it asks MDNS first, waits out the 5 second timeout, then checks /etc/hosts.</p>
+<p>There are several ways around this. You could install dnsmasq, though I think (but am not sure) it might have the same issues with being checked only after the 5 second mdns timeout. You could just start using an alternative TLD, like .dev.</p>
+<p>But if you have to use .local, the most elegant solution I've found is the dscl utility. Using it is very straightforward. To add a host called mydev.local and point it to the localhost, just do this:</p>
+<p>sudo dscl localhost -create /Local/Default/Hosts/mydev.local IPAddress 127.0.0.1</p>
+<p>To see all the currently defined hosts and their IPs</p>
+<p>sudo dscl localhost -list /Local/Default/Hosts IPAddress</p>
+<p>And to remove a host:</p>
+<p>sudo dscl localhost -delete /Local/Default/Hosts/mydev.local</p>
+<p>Overall, pretty straightforward and works well. I still would prefer to be able to edit /etc/hosts instead, but this is a better alternative to having to rename all our .local servers.</p></div>
+<div class='post_responses'>
+<h4>7816 views and 4 responses</h4>
+<ul class='post_responses list'>
+<li class='response clearfix'>
+<div class='response_header'>
+<div class='response_time'>Oct 16 2011,  3:42 PM</div>
+<div class='response_name'>Tony Arnold responded:</div>
+</div>
+<div class='response_body'>You might want to double check the details of this article. Hosts aren't resolved properly when added this way under Lion, and the flag to remove a host is "-delete", not "-remove".</div>
+</li>
+<li class='response clearfix'>
+<div class='response_header'>
+<div class='response_time'>Oct 16 2011,  5:42 PM</div>
+<div class='response_name'>AJ Bourg responded:</div>
+</div>
+<div class='response_body'>Thanks, I must have copied the wrong line into my notes.</div>
+</li>
+<li class='response clearfix'>
+<div class='response_header'>
+<div class='response_time'>Jun 16 2012,  9:51 PM</div>
+<div class='response_name'>Thomas James responded:</div>
+</div>
+<div class='response_body'>Hi, <p>Interesting take on the problem. Have you considered setting up avahi-daemon on each of your development servers so that the .local resolution "just works"? <br />That way you avoid the pain of having to duplicate the host entries on each mac you're working with.</p><p>(sorry if you've solved this another way in a future blog post)</p></div>
+</li>
+<li class='response clearfix'>
+<div class='response_header'>
+<div class='response_time'>Jan 22 2013,  9:25 AM</div>
+<div class='response_name'>gaqzi responded:</div>
+</div>
+<div class='response_body'>I found this blog post while researching while my .local hosts were so slow.<p>Funny enough I found an easier way to make them work, but I wouldn't exactly call it a solution.</p><p>If you define your domains like this:</p><p>127.0.0.1 dev.dev.dev dev.something.local</p><p>dev.something.local will actually lookup as fast as normal, but not if you switch the definitions around. Really weird.</p></div>
+</li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+</body>
+</html>
